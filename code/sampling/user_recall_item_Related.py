@@ -125,7 +125,7 @@ user_item_ranking = get_user_item_ranking(train_non_zero)
 def get_user_watched_item(train):
     ## 返回一个series, index是user_id, value是用户看过的所有动漫(包括低分)
     user_stats = pd.read_pickle(
-        r'C:\Users\tqd95\Desktop\graduation_thesis\dataset\user_stats.pkl')
+        r'C:\Users\tqd95\Desktop\graduation_thesis\dataset\sampling\user_stats.pkl')
     user_stats = user_stats.loc[:, ['user_id']]
     user_watched_item = train.groupby('user_id').agg(lambda x: set(x.anime_id))
     user_watched_item = user_watched_item.iloc[:, 0]

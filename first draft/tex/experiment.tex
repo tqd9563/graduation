@@ -1,0 +1,664 @@
+% !TEX root = ../thesis.tex
+
+\chapter{实验分析}
+  \section{基本实验结果}
+  基本实验基于对全量用户随机采样5\%后得到的训练集和测试集。根据时间进行划分会出现“新用户”及“新动漫”（下面用“新番”称谓）两个概念。新用户指的是在2017年6月30日之前没有过行为，或是打分均为零的用户；新番指的是首映日期在2017年6月30日之后的动漫。
+    \subsection{四种召回算法}
+    本实验采用的四种基本召回算法，分别是Item-based CF召回,Item-related召回, 人口统计召回以及Item-similarity召回。其中，Item-based CF召回属于协同过滤算法，人口统计召回属于基于规则的推荐，Item-similarity召回类似基于内容的推荐，而Item-related召回是根据数据集自带特征的特点进行的关联推荐。下面简要介绍一下这四种算法：
+      \subsubsection{Item-based CF}
+      这个就是前文提过的经典的基于物品的协同过滤算法\cite{wang2006unifying}。算法伪代码见4-1。
+      \begin{algorithm}[htbp]
+        \caption{Item-based CF}
+        \KwIn{$u\in\tilde{U},\;W,\;I(u),\;S(u),\;K_1,\;K_2$}
+        \KwOut{$R(u)$}
+        $res=\{\},\;R(u)=[]$\;
+        \If{$I(u)=\emptyset\;\;\textbf{or}\;\;S(u)=\emptyset$}{
+          return $R(u)$\;}
+        \For{$i \in I(u)$}{
+          $cnt=0$\;
+          \For{$j,w_j \in\;sort(W[i])$}{
+            \If{$j \in S(u)$}{\textbf{continue}\;}
+            $res[j]\leftarrow res[j]+w_j$\;
+            $cnt\leftarrow cnt+1$\;
+            \If{$cnt\geq K_1$}{\textbf{Break}\;}
+          }
+        }
+        $R(u)=sort(res,K_2)$\;
+        return $R(u)$\;
+      \end{algorithm}
+      符号说明：$\tilde{U}$是全体测试集用户；$W$是物品相似度矩阵；$I(u)$是用户$u$在训练集中喜欢的动漫集合；$S(u)$是用户$u$在训练集中观看过的动漫集合；$K_1,K_2$分别是选取的邻域大小以及最终召回的动漫个数；$R(u)$是最后为用户$u$召回的动漫集合。
+
+      \subsubsection{Item-related召回}
+      动漫信息数据集中的字段related存储了与该动漫相关联的其他动漫、漫画及关联方式。涉及的关联方式主要有：
+      \begin{itemize}
+        \item Adaptation：改编，占所有related key比例的30\%。但是通过
+        Adaptation关联得到的都是漫画，而漫画不包含在我们的推荐目标范围内（数据集局限于TV动画、OVA、Movie等）；
+        \item Sequel/Prequel：续集/前传，二者一一对应，占所有related key比例的28\%。通常动漫A的OVA会作为A的Sequel关联；
+        \item Parent story/Side story：父篇/番外，二者也是一一对应，占所有related key比例的15\%。
+      \end{itemize}
+      Item-related召回就是根据Sequel、Prequel、Parent story和Side story这四种related key来进行关联推荐。具体的召回的方法是：对每个用户历史上喜欢的动漫按照打分从高到低排序，然后依次通过related方式关联到新的动漫（可能没有关联），如果关联到的这部动漫没有被用户看过，就加入召回列表。算法伪代码见4-2：
+      \begin{algorithm}[htbp]
+        \caption{Item-related Recall}
+        \KwIn{$u\in\tilde{U},\;Re,\;I(u),\;S(u),\;K$}
+        \KwOut{$R(u)$}
+        $R(u)=\{\}$\;
+        \If{$I(u)=\emptyset\;\;\textbf{or}\;\;S(u)=\emptyset$}{return $\{\}$\;}
+        $cnt=0$\;
+        \For{$i \in sort(I(u))$}{
+          \For{$j \in Re(i)$}{
+            \If{$j\notin R(u)\;\;\textbf{and}\;\;j\neq[]\;\;\textbf{and}j\notin S(u)$}{
+              $cnt\leftarrow cnt+1$\;
+              $R(u)\leftarrow R(u)\cup \{j\}$\;
+            }
+            \If{$cnt\geq K$}{\textbf{Break}\;}
+          }
+          \If{$cnt\geq K$}{\textbf{Break}\;}
+        }
+      \end{algorithm}
+
+      符号说明：基本与Item-based CF的符号一致，$Re(i)$是动漫$i$通过related
+      字段相关联的动漫集合；$sort(I(u))$是对用户$u$喜欢的动漫根据打分排序；$K$是最终召回的动漫数。
+
+      \subsubsection{人口统计召回}
+      用户信息数据集记录着关于个用户的一些固有属性特征，其中人口统计特征有gender（性别）, location（地域）和birth\_date（出生日期）。人口统计学特征可以用来帮助预测用户的兴趣，例如：不同性别、不同年龄阶段的用户所喜好的动漫一般会大有不同。由于location字段取值非常多，且参差不齐，同一个国家和地区有许多不同的表示方法，较难处理，所以本实验只选用gender和age两个特征。
+
+      另一方面，人口统计召回也是解决用户冷启动的一种方法。对于测试集中的某个新用户$u$，其在训练集中没有喜欢的动漫，或是没有评过分，即$u\in\tilde{U},\;s.t.\;I(u)=\emptyset\;\;\textbf{or}\;\;S(u)=\emptyset$，则前两种算法都无法做出推荐，但基于人口统计的召回可以，只要有年龄和性别信息即可。
+
+      对于性别gender，保留数据集中的三种取值Male, Female和Non-Binary；对于年龄age，因为是连续变量，对其进行分箱处理：
+      \begin{itemize}
+        \item $age\in[11,19)$: Teenager,
+        \item $age\in[19,22)$: Youth,
+        \item $age\in[22,26)$: YouthAdult,
+        \item $age\in[26,30)$: Adult,
+        \item $age\in[30,50)$: MiddleAged.
+      \end{itemize}
+      整个召回算法分为两个步骤：
+      \begin{enumerate}
+        \item 第一步生成训练集中不同(gender,age)取值对所对应的热门动漫排序结果；具体地，首先对于每个可能的(gender,age) 值对，统计训练集中每一部动漫在该性别年龄分组下的平均得分以及平均喜欢率（即label的均值）；然后过滤掉样本记录数少于该性别年龄段总人数的20\%的小众动漫；最后对每部动漫的平均得分以及平均喜 欢率分别作一个排名，取其平均值作为该动漫在该 (gender,age) 分组下的最终排名。
+        \item 第二步是对测试集的每个用户，获取性别与年龄，然后在第一步的结果集中找到其所属分组的topK部动漫，过滤后召回。
+      \end{enumerate}
+      算法的伪代码如下。
+      \begin{algorithm}[htbp]
+        \caption{Gender\&Age Ranking}
+        \KwIn{$Train,\;gender,\;age$}
+        \KwOut{$Ranking(gender,age)$}
+        Get all the records in $Train$ given $gender$ and $age$, named $T_{g,a}$\;
+        Caculate average score and label of $T_{g,a}$, grouped by each anime\_id\;
+        Delete some anime\_id if the number of its samples is less than $20\%$ of the total users of $T_{g,a}$\;
+        Caculate the final ranking for each anime\_id in $T_{g,a}$, that is：
+        $$rank(anime\_id) = \left.\big(rank(avg\_score)+rank(avg\_label)\big)\middle/2\right.$$\;
+        $Ranking(gender,age) = sort(\{anime\_id,rank(anime\_id)\})$\;
+        return $Ranking(gender,age)$\;
+      \end{algorithm}
+
+      \begin{algorithm}[htbp]
+        \caption{Gender\&Age Recall}
+        \KwIn{$u\in\tilde{U},\;\mathcal{U},Ranking(gender,age)\;S(u),\;K$}
+        \KwOut{$R(u)$}
+        $R(u)=\{\}$\;
+        $age\leftarrow \mathcal{U}(u)[age],\quad gender\leftarrow \mathcal{U}(u)[gender]$\;
+        \eIf{$gender\neq$ 'Non-Binary'}{
+          $Recall\_list\leftarrow Ranking(gender,age)$\;
+          \For{$i \in Recall\_list$}{
+            \If{$i \in S(u)$}{\textbf{Continue}\;}
+            $R(u)\leftarrow R(u)\cup \{i\}$\;
+            \If{$|R(u)|\geq K$}{\textbf{Break}\;}
+          }
+          return $R(u)$\;
+        }{
+          $Recall\_list_1\leftarrow Ranking('Male',age)$\;
+          \For{$i \in Recall\_list_1$}{
+            \If{$i \in S(u)$}{\textbf{Continue}\;}
+            $R(u)\leftarrow R(u)\cup \{i\}$\;
+            \If{$|R(u)|\geq K/2$}{\textbf{Break}\;}
+          }
+          $Recall\_list_2\leftarrow Ranking('FeMale',age)$\;
+          \For{$i \in Recall\_list_2$}{
+            \If{$i \in S(u)$}{\textbf{Continue}\;}
+            $R(u)\leftarrow R(u)\cup \{i\}$\;
+            \If{$|R(u)|\geq K$}{\textbf{Break}\;}
+          }
+        }
+        return $R(u)$\;
+      \end{algorithm}
+
+      符号说明：$\mathcal{U}$是用户画像表，通过给定的用户id$u$获取性别和年龄；$Ranking(gender,age)$是第一步返回的不同性别和年龄分组下的TopAnime；$S(u)$是用户$u$在训练集中观看过的动漫集合；$K$是最终召回的动漫数。
+
+      \subsubsection{Item-similarity召回}
+      该算法通过特征向量计算物品间相似度，然后根据用户在训练集中喜欢的动漫，来推荐与其相似的动漫。其原理和Item-based CF比较相似，区别在于Item-similarity只推荐新番，弥补了前面两种召回算法无法召回新番的不足之处。
+
+      具体地，物品间相似度计算使用向量的余弦距离，每部动漫对应一个特征向量，其分量涉及动漫信息表中的genre（流派）、source（原作类型）以及部分rating（适宜人群），共20维的一个0-1向量。由于是新番推荐，主要计算旧番和新番间的相似度。得到相似度矩阵$W$之后，类比Item-based CF的方法就可以求得用户$u$对各个新番的喜好程度，最后取前TopK个动漫作为召回结果。特别地，对新用户要先用人口统计召回获得其可能喜欢的旧番，才能计算其对新番的喜好程度。算法的伪代码见4-5。
+      \begin{algorithm}
+        \caption{Item-similarity Recall}
+        \KwIn{$u\in\tilde{U},\;W,\;I(u),\; GA(u),\;K_1,\;K_2$}
+        \KwOut{$R(u)$}
+        $res=\{\},\;R(u)=[]$\;
+        \If{$I(u)=\emptyset$}{$I(u)\leftarrow GA(u)$\;}
+        \For{$i \in I(u)$}{
+          \For{$j,w_j \in\;sort(W[i])[:K_1]$}{
+            $res[j]\leftarrow res[j]+w_j$\;
+          }
+        }
+        $R(u)=sort(res,K_2)$\;
+        return $R(u)$\;
+      \end{algorithm}
+      符号说明：$\tilde{U}$是全体测试集用户；$W$是旧番与新番的相似度矩阵；$I(u)$是用户$u$在训练集中喜欢的动漫集合；$GA(u)$是用户$u$的人口统计召回结果集；$K_1,K_2$分别是选取的邻域大小以及最终召回的动漫个数；$R(u)$是召回结果。
+
+    \subsection{召回结果比较}
+    首先比较Item-based CF和Item-similarity Recall在邻域参数$K_1$不同取值下的效果，见表~\ref{tab:item-cf}和~\ref{tab:item-similarity}。
+    % Table generated by Excel2LaTeX from sheet 'Sheet1'
+    \begin{table}[htbp]
+      \centering
+      \caption{不同$K_1$取值下Item-based CF的效果}
+      %\textbf{表4.1}~~不同$K_1$取值下Item-based CF的效果
+      \begin{tabular}{rrrrrr}
+        \toprule
+        \multicolumn{1}{c}{Recall} & \multicolumn{1}{c}{Precision} & \multicolumn{1}{c}{Hit\;rate} & \multicolumn{1}{c}{Coverage} & \multicolumn{1}{c}{K1} & \multicolumn{1}{c}{K2} \\
+        \midrule
+        \textbf{2.148\%} & \textbf{10.394\%} & \textbf{44.700\%} & \textbf{13.107\%} & 5    & 10 \\
+        2.093\% & 10.091\% & 41.798\% & 10.033\% & 10   & 10 \\
+        2.066\% & 9.961\% & 40.911\% & 8.668\% & 15   & 10 \\
+        2.015\% & 9.715\% & 40.427\% & 7.633\% & 20   & 10 \\
+        1.986\% & 9.577\% & 40.508\% & 7.259\% & 25   & 10 \\
+        \textbf{3.778\%} & \textbf{9.190\%} & \textbf{55.744\%} & \textbf{18.386\%} & 5    & 20 \\
+        3.709\% & 8.972\% & 54.252\% & 15.102\% & 10   & 20 \\
+        3.641\% & 8.791\% & 52.842\% & 13.362\% & 15   & 20 \\
+        3.600\% & 8.680\% & 52.035\% & 11.938\% & 20   & 20 \\
+        3.568\% & 8.603\% & 51.794\% & 11.338\% & 25   & 20 \\
+        \bottomrule
+      \end{tabular}%
+      \label{tab:item-cf}%
+    \end{table}%
+
+    % Table generated by Excel2LaTeX from sheet 'Sheet1'
+    \begin{table}[htbp]
+      \centering
+      \caption{不同$K_1$取值下Item-similarity Recall的效果}
+      %\textbf{表4.2}~~不同$K_1$取值下Item-similarity Recall的效果
+      \begin{tabular}{rrrrrr}
+        \toprule
+        \multicolumn{1}{c}{Recall} & \multicolumn{1}{c}{Precision} & \multicolumn{1}{c}{Hit\;rate} & \multicolumn{1}{c}{Coverage} & \multicolumn{1}{c}{K1} & \multicolumn{1}{c}{K2} \\
+        \midrule
+        \textbf{2.437\%} & \textbf{11.002\%} & \textbf{48.408\%} & \textbf{4.874\%} & 5    & 10 \\
+        2.445\% & 11.000\% & 47.561\% & 4.709\% & 10   & 10 \\
+        2.372\% & 10.673\% & 47.037\% & 4.769\% & 15   & 10 \\
+        2.298\% & 10.339\% & 46.352\% & 4.634\% & 20   & 10 \\
+        2.262\% & 10.177\% & 45.425\% & 4.499\% & 25   & 10 \\
+        \textbf{4.350\%} & \textbf{9.866\%} & \textbf{58.081\%} & \textbf{5.549\%} & 5    & 20 \\
+        4.208\% & 9.498\% & 57.517\% & 5.624\% & 10   & 20 \\
+        4.004\% & 9.022\% & 55.623\% & 5.729\% & 15   & 20 \\
+        3.884\% & 8.738\% & 54.776\% & 5.789\% & 20   & 20 \\
+        3.759\% & 8.456\% & 54.575\% & 5.609\% & 25   & 20 \\
+        \bottomrule
+      \end{tabular}%
+      \label{tab:item-similarity}%
+    \end{table}%
+
+    从表~\ref{tab:item-cf}和表~\ref{tab:item-similarity}可以看出，不论是Item-based CF还是Item-similarity Recall，其算法效果与邻域参数$K_1$的大小呈负相关：$K_1$越小，最后的效果越好。因此后续实验中，均令其$K_1=5$。
+
+    表~\ref{tab:recall}是四种召回算法在测试集上的效果对比，参数$K$表示最终召回的动漫数量，取值为$K\in\{10,20\}$。
+    % Table generated by Excel2LaTeX from sheet 'Sheet2'
+    \begin{table}[htbp]
+      \centering
+      \caption{四种召回算法在测试集上的表现}
+      %\textbf{表4.3}~~四种召回算法各自在测试集上的表现
+      \begin{tabular}{rlrrrr}
+        \toprule
+        \multicolumn{1}{l}{K} & Algorithm & \multicolumn{1}{l}{Recall} & \multicolumn{1}{l}{Precision} & \multicolumn{1}{l}{Hit\;rate} & \multicolumn{1}{l}{Coverage} \\
+        \midrule
+        10   & Item-CF & 2.148\% & 10.394\% & 44.700\% & 13.107\% \\
+        & Item-related & 1.466\% & 7.247\% & 35.953\% & 22.615\% \\
+        & gender+age & 2.036\% & 9.177\% & 41.999\% & 3.824\% \\
+        & Item-similarity & 2.437\% & 11.002\% & 48.408\% & 4.874\% \\
+        20   & Item-CF & 3.778\% & 9.190\% & 55.744\% & 18.386\% \\
+        & Item-related & 2.656\% & 6.770\% & 48.609\% & 27.070\% \\
+        & gender+age & 3.641\% & 8.230\% & 52.358\% & 5.324\% \\
+        & Item-similarity & 4.350\% & 9.866\% & 58.081\% & 5.549\% \\
+        \bottomrule
+      \end{tabular}%
+      \label{tab:recall}%
+    \end{table}%
+
+    从表~\ref{tab:recall}中可以得到如下结论：
+    \begin{itemize}
+      \item 人口统计召回以及Item-similarity召回对应的覆盖率非常低，因为前者召回的是同年龄性别用户喜欢的热门动漫，而后者召回的新番本身就占全部动漫的少数；
+      \item 对比三种旧番召回算法，表现最好的是Item-based CF，这说明协同过滤算法相比于基于规则的算法还有基于内容关联的算法性能要好。
+      \item Item-related召回的表现是四种算法里最差的，后续为其分配的权重会比较小。注意该算法的覆盖率是最高的，可以增加推荐结果的多样性。
+    \end{itemize}
+
+    \subsection{用Xgboost进行精排}
+    得到四组召回结果后，可以利用排序层对结果进行重排，这可以看成是一个简单的二分类问题，具体的处理流程如下：
+    \begin{enumerate}
+      \item 对训练集只保留user\_id、anime\_id和label三列（其余列不进入模型），然后根据前文生成的用户画像表和动漫画像表，合并成最终训练表，基于最终训练表训练一个xgboost二分类模型；
+      \item 对测试集的每个user\_id，“绑定”上四组召回结果，合并上用户画像和动漫画像表形成最终测试集，然后利用训练好的模型进行预测打分；
+      \item 最后依据打分结果进行重排。此处新番和旧番的排名会分开计算，最终为每个用户返回分数最高的前10部新番和前20部旧番作为推荐结果。
+    \end{enumerate}
+    这里设置推荐列表大小$|R(u)|=30$是有一定依据的。表~\ref{tab:old_new_distribution}统计了测试集中平均每个用户观看的新番数量和旧番数量的四分位数分布情况：
+    % Table generated by Excel2LaTeX from sheet 'Sheet2'
+    \begin{table}[htbp]
+      \centering
+      \caption{测试集中用户观看的新番与旧番分布情况}
+      %\textbf{表4.4}~~测试集中用户观看的新番与旧番分布情况
+      \begin{tabular}{rrrr}
+        \toprule
+        \multicolumn{1}{l}{quantile} & \multicolumn{1}{l}{new\_anime\_count} & \multicolumn{1}{l}{old\_anime\_count} & \multicolumn{1}{l}{total\_anime\_count} \\
+        \midrule
+        mean & 17.18 & 45.60 & 62.78 \\
+        std  & 23.22 & 84.97 & 98.59 \\
+        25\% & 2    & 7    & 11 \\
+        50\% & 9    & 19   & 32 \\
+        75\% & 23   & 49   & 77 \\
+        \bottomrule
+      \end{tabular}%
+      \label{tab:old_new_distribution}%
+    \end{table}%
+
+    $|R(u)|$的大小正是依据了表~\ref{tab:old_new_distribution}中新旧番观看数量分布的中位数：即为每个用户召回新番10部，旧番20部。同时，根据表~\ref{tab:recall}中四种算法在测试集上的效果，为它们分配的权重K值分别是$20,10,20,20$。
+
+    二分类模型选用的是Xgboost集成学习算法\cite{chen2016xgboost}，模型参数大多为默认值，一些手动设置的参数如下：
+    % Table generated by Excel2LaTeX from sheet 'Sheet1'
+    \begin{table}[htbp]
+      \centering
+      \caption{Xgboost参数设置}
+      %\textbf{表4.5}~~Xgboost参数设置
+      \resizebox{\textwidth}{!}{
+        \begin{tabular}{rrrrrrrrrr}
+          \multicolumn{1}{l}{Parameters} & \multicolumn{1}{l}{learning\_rate} & \multicolumn{1}{l}{n\_estimators} & \multicolumn{1}{l}{max\_depth} & \multicolumn{1}{l}{gamma} & \multicolumn{1}{l}{subsample} & \multicolumn{1}{l}{colsample\_bytree} & \multicolumn{1}{l}{reg\_alpha} & \multicolumn{1}{l}{reg\_lambda} & \multicolumn{1}{l}{random\_state} \\
+          \midrule
+          & 0.5  & 100  & 5    & 1    & 0.8  & 0.8  & 0    & 1    & 1001 \\
+      \end{tabular}}%
+      \label{tab:xgb_parameters}%
+    \end{table}%
+
+    重排序后最终的推荐结果的评价性能如表~\ref{tab:xgb_result}所示：
+    % Table generated by Excel2LaTeX from sheet 'Sheet2'
+    \begin{table}[htbp]
+      \centering
+      \caption{Xgboost重排后的推荐结果}
+      %\textbf{表4.6}~~Xgboost重排后的推荐结果
+      \begin{tabular}{rrrr}
+        \multicolumn{1}{l}{Recall} & \multicolumn{1}{l}{Precision} & \multicolumn{1}{l}{Hit\;rate} & \multicolumn{1}{l}{Coverage} \\
+        \midrule
+        7.469\% & 11.203\% & 77.872\% & 21.296\% \\
+      \end{tabular}%
+      \label{tab:xgb_result}%
+    \end{table}%
+
+    对比表~\ref{tab:recall}可以看出：经过排序后的推荐结果，无论是$Recall$, $Precision$还是$Hit\;rate$，都要比任意一种算法单独的效果要好很多。尤其是随着$K$的增加，$Precision$本应呈下降趋势，但是经过排序后的推荐结果的$Precision$不降反升。因此添加入排序阶段可以很好地提高推荐系统的性能。
+
+  \section{抽样合理性讨论}
+  上一小节的实验主要比较了四种推荐召回算法各自的效果差异，并利用xgboost模型做了一个精排序，效果有显著提升。由于模型计算开销的问题，实验是基于采样后的数据集来做的，采样方法是对全量用户随机抽样5\%。这一节讨论的是这个抽样的合理性，主要是通过全量、抽样以及增量训练三者的结果比较来看。
+    \subsection{增量学习的含义和特点}
+    增量学习（Incremental Learning）\cite{zhong2017survey}是指一个学习系统能不断地从新样本中学习新的知识，并能保存大部分已学习到的知识。它非常类似于人类自身的学习模式，其应用的主要场景有两个：一个是数据库非常大的情况，训练数据无法一次性装入计算机内存，这时候可以用增量学习的方法来训练模型，如大规模机器学习；另一个场景是针对流数据随时间的变化不断变化。其主要特点有：
+    \begin{itemize}
+      \item 可以从新数据中学习新知识。当新增数据时，只做关于新增数据引起的更新，同时保存以前学习到的大部分知识；
+      \item 以前已经处理过的数据不需要重复处理；
+      \item 学习系统没有关于整个训练样本的先验知识；
+      \item —旦学习完成后训练观测样本被“丢弃”。
+    \end{itemize}
+
+    一个直观的例子来解释增量与全量训练的差异。设现有200条数据，用增量训练的方法，第一次训练100条数据，第二次训练100条数据。这和直接全量训练相比：增量训练在第二次训练100条数据时，前100条数据已经不存在于内存中了，模型会更拟合于后面的新数据。但是后100条训练数据是基于前100条数据训练所得的模型基础上再训练的，会保留初始模型的部分信息。如果要用增量训练，最好保证增量数据的质量均匀分布，防止把模型带偏。
+
+    Python中的xgboost api支持增量学习，据官方文档描述，其方法是将全量数据集分batch读入内存，迭代训练模型。每轮训练好一个xgb模型后，下轮迭代会从上轮的xgb模型的基础上出发，基于新一批的batch数据，保留模型树结构不变，只刷新树节点的统计量和叶子节点的输出值。相关设置参数如下：
+    \begin{itemize}
+      \item \mintinline{python}{process_type = update}: 从已有的模型出发，保留树的结构不变
+      \item \mintinline{python}{updater = refresh}: 指定每轮迭代时树的更新方式。\mintinline{python}{refresh}表示利用新的数据，刷新原有树的内部节点的统计量。这里不会进行随机行采样。
+      \item \mintinline{python}{refresh_leaf = True}: 关于\mintinline{python}{updater = refresh}的一个参数，设置为\mintinline{python}{True}时，不仅更新树的内部节点统计量，还会刷新叶子节点的输出值。
+    \end{itemize}
+
+    \subsection{增量训练的有效性}
+    为了检验api是否有效，我们把4.1节实验中用的抽样训练集当成是“全量数据集”，表~\ref{tab:xgb_result}的结果就对应了“全量训练结果”。然后利用增量训练的方法训练模型，并对4.1节中的抽样测试集进行预测，比较二者的效果。最后同样对这个“全量数据集”中作一次5\%用户随机抽样，基于这个训练集训练的模型结果作为本次实验的“抽样训练结果”。
+
+    由于增量训练最好保证增量数据的质量均匀分布，下面的实验采用了三种不同的增量数据读入方式来比较模型结果：
+    \begin{enumerate}
+      \item 按默认数据顺序读入。默认的训练数据集是按照anime\_id字段的取值大小升序排序的。此时不同用户关于同一部动漫的行为样本在训练集中是连续出现的；
+      \item 按时间顺序读入。默认顺序会导致每轮更新时用到的数据只包含一小部分动漫。因此把训练集按last\_update\_date字段取值升序排序，由远及近分批读入；
+      \item 随机顺序读入，即把数据集完全随机打乱后再分批读入。
+    \end{enumerate}
+
+    按上面三种顺序读入的增量训练模型结果如表~\ref{tab:incremental_results_3_orders}所示：
+    % Table generated by Excel2LaTeX from sheet 'incremental'
+    \begin{table}[htbp]
+      \centering
+      \caption{不同读入数据顺序下增量训练的结果}
+      %\textbf{表4.7}~~不同读入数据顺序下增量训练的结果
+      \resizebox{\textwidth}{!}{
+        \begin{tabular}{rlrrrr}
+          \toprule
+          \multicolumn{1}{l}{Order} & Model & \multicolumn{1}{l}{Recall} & \multicolumn{1}{l}{Precision} & \multicolumn{1}{l}{Hit\_rate} & \multicolumn{1}{l}{Coverage} \\
+          \midrule
+          & Full amount training & \textbf{7.469\%} & \textbf{11.203\%} & \textbf{77.872\%} & \textbf{21.296\%} \\
+          & Sampling training（5\%） & 7.039\% & 10.558\% & 76.622\% & 20.531\% \\
+          \multicolumn{1}{l}{raw} & Incremental（first round） & 6.819\% & 10.228\% & 75.574\% & 22.256\% \\
+          & Incremental（last round） & 7.127\% & 10.690\% & 76.824\% & 18.056\% \\
+          \multicolumn{1}{l}{time} & Incremental（first round） & 7.203\% & 10.804\% & 76.179\% & 22.166\% \\
+          & Incremental（last round） & 7.271\% & 10.906\% & 77.630\% & 17.622\% \\
+          \multicolumn{1}{l}{random} & Incremental（first round） & 7.106\% & 10.658\% & 76.542\% & 22.091\% \\
+          & Incremental（last round） & 7.323\% & 10.984\% & 77.227\% & 17.697\% \\
+          \bottomrule
+      \end{tabular}}%
+      \label{tab:incremental_results_3_orders}%
+    \end{table}%
+
+    其中，"Full amount training"对应“全量训练结果”，"Sampling training"对应“抽样训练结果”，“Incremental”即是“增量训练”，所有测试集都是4.1节的测试集。从表~\ref{tab:incremental_results_3_orders}可以看出：
+    \begin{itemize}
+      \item 默认顺序下，从首轮到末轮，模型的预测效果有了较为明显的提高，更接近于全量数据下的表现，同时显著优于抽样数据下的表现；
+      \item 时间顺序与随机顺序下，从首轮到末轮，增量模型的预测效果没有太大的变化，并且从首轮开始模型就已经很接近全量数据训练下的表现了，其效果仍然显著优于抽样的结果；
+      \item 从模型效果上来看：全量$>$增量$>$抽样。
+    \end{itemize}
+
+    因此，Xgboost的增量训练api的确起到了作用，并且其效果要优于直接抽样训练。为避免偶然因素，这里多做几次用户随机抽样并多次训练模型，比较其在测试集上的预测效果，如表~\ref{tab:multiple_sampling}所示：
+    % Table generated by Excel2LaTeX from sheet 'incremental'
+    \begin{table}[htbp]
+      \centering
+      \caption{对“全量”数据多次采样的结果}
+      %\textbf{表4.8} 对“全量”数据多次采样的结果
+      \begin{tabular}{rrrrr}
+        \toprule
+        \multicolumn{1}{l}{Times} & \multicolumn{1}{l}{Recall} & \multicolumn{1}{l}{Precision} & \multicolumn{1}{l}{Hit\;rate} & \multicolumn{1}{l}{Coverage} \\
+        \midrule
+        1    & 7.039\% & 10.558\% & 76.622\% & 20.531\% \\
+        2    & 7.151\% & 10.726\% & 76.703\% & 22.705\% \\
+        3    & 7.174\% & 10.761\% & 76.824\% & 21.341\% \\
+        4    & 7.107\% & 10.660\% & 77.025\% & 21.641\% \\
+        5    & 7.122\% & 10.682\% & 76.622\% & 22.271\% \\
+        average & 7.119\% & 10.678\% & 76.759\% & 21.698\% \\
+        full & \textbf{7.469\%} & \textbf{11.203\%} & \textbf{77.872\%} & \textbf{21.296\%} \\
+        \bottomrule
+      \end{tabular}%
+      \label{tab:multiple_sampling}%
+    \end{table}%
+
+    从表~\ref{tab:multiple_sampling}中可以看出：这几次随机抽样的结果间有些微的差异，共同特点是他们都比“全量”训练和增量训练的效果要差。
+
+    \subsection{全量数据抽样的合理性}
+    4.2.2节的实验验证了从预测表现上来看，全量训练$>$增量训练$>$抽样训练。下面对原始的1800万行全量数据集进行增量训练，并比较其与4.1节中抽样训练得到的模型在全量测试集上的预测表现，结果如表~\ref{tab:full_vs_sampling}。可以发现：此时抽样训练模型的预测结果甚至要优于增量训练模型的预测结果。
+    % Table generated by Excel2LaTeX from sheet 'Sheet3'
+    \begin{table}[htbp]
+      \centering
+      \caption{全量数据的增量结果与$5\%$抽样的对比}
+      %\textbf{表4.9}~~全量数据的增量结果与5\%抽样的对比
+      \resizebox{\textwidth}{!}{
+        \begin{tabular}{lrrrr}
+          \toprule
+          Model & \multicolumn{1}{l}{Recall} & \multicolumn{1}{l}{Precision} & \multicolumn{1}{l}{Hit\;rate} & \multicolumn{1}{l}{Coverage} \\
+          \midrule
+          Sampling training（5\%） & 7.358\% & 11.015\% & 76.736\% & 42.606\% \\
+          Full Incremental（last round） & 7.195\% & 10.771\% & 76.402\% & 41.302\% \\
+          \bottomrule
+      \end{tabular}}%
+      \label{tab:full_vs_sampling}%
+    \end{table}%
+
+    上一小节90万数据下的抽样结果明显差于增量结果，现在1800万数据下抽样结果甚至优于增量结果，且该增量训练的确是有效果的。由此可以推出：对于原始数据集1800万的大样本量而言，随机抽取5\%用户得到的90万样本，可以比较好的代表总体样本，因此基于该抽样训练集得到的模型预测结果也比较可靠。另一方面，表~\ref{tab:liked_anime_quantile}是各训练集中每个用户喜欢动漫数的分位数分布情况：
+    % Table generated by Excel2LaTeX from sheet 'Sheet3'
+    \begin{table}[htbp]
+      \centering
+      \caption{各训练集中用户喜欢动漫数分布情况}
+      %\textbf{表4.10}~~各数据集用户喜好动漫数分布情况
+      \begin{tabular}{rrrrrrrr}
+        \toprule
+        \multicolumn{1}{l}{quantile} & \multicolumn{1}{l}{full} & \multicolumn{1}{l}{sampling} & 1    & 2    & 3    & 4    & 5 \\
+        \midrule
+        0.1  & 8    & 8    & 11   & 11.3 & 11   & 7    & 10.1 \\
+        0.2  & 19   & 20   & 24.4 & 24   & 20   & 20.6 & 22 \\
+        0.3  & 31   & 32   & 33   & 35   & 32   & 32   & 37 \\
+        0.4  & 45   & 46   & 51   & 49   & 43   & 39.2 & 46.4 \\
+        0.5  & 61   & 62   & 65   & 61   & 65.5 & 53   & 62.5 \\
+        0.6  & 80   & 83   & 83.6 & 90.8 & 88.2 & 74.8 & 85 \\
+        0.7  & 106  & 109  & 116  & 122.2 & 118.8 & 106.1 & 108.4 \\
+        0.8  & 144  & 145  & 166.4 & 166.2 & 151.6 & 166.4 & 148 \\
+        0.9  & 215  & 220  & 254  & 233.1 & 233.1 & 236.2 & 220.7 \\
+        \bottomrule
+      \end{tabular}%
+      \label{tab:liked_anime_quantile}%
+    \end{table}%
+
+    其中，"full"指的全量1800万数据，"sampling"指抽样的90万数据，而$1,2,3,4,5$分别对应表~\ref{tab:multiple_sampling}中五次抽样$5\%$所得的训练子集。通过观察发现：抽样数据集和全量数据集的各分位数分布十分接近，而二次抽样后的分布相对一次抽样有明显差异，这也从另一个角度说明了我们对用户随机抽样的结果仍保持着和原始数据集相似的分布，正因如此，抽样训练的模型在全量测试集上的预测表现仍然良好，可以用于解决全量召回结果排序的问题。
+
+  \section{数据稀疏解决}
+  表~\ref{tab:status_score_distribution}中数据稀疏的特点很明显，许多样本其my\_score=0。在4.1节的实验中，我们基本没有利用这些缺失样本，损失了很多信息。本节主要对这些缺失得分进行填充，拟采用的方法有两种：基于K近邻的填充和基于邻域的评分预测填充。
+    \subsection{K近邻填充法}
+    K近邻（k-nearest neighbors, KNN）是一种非常基本的机器学习算法，它可以解决分类或者回归问题。对于分类问题，KNN采用多数投票法，即寻找与待预测样本特征最相近的k个训练样本，把这k个样本中出现次数最多的类别作为预测结果；对于回归问题，采用平均法，同样寻找和待预测样本特征最相近的k个训练样本，把这k个样本的标签均值作为预测结果。
+
+    记4.1节中训练集为$T$，而my\_status=1,2,3的零分样本组成的数据集为$T_0$。我们把$T$作为训练集，$T$中的得分为样本标签训练一个KNN回归模型，然后对测试集$T_0$中的样本得分进行预测。最终的训练集为$T_{final}=T\cup T_0$。
+
+    下面的实验中没有把整个$T_0$都作为测试集，而是过滤出其中一部分观看集数/总集数比例大于$50\%$的样本。这么做的理由是缺失打分的样本本身就蕴含着用户可能不喜欢这部动漫的信息，因此只有对那些观看长度比例较高的样本进行预测比较有可信程度。
+
+    KNN回归模型基本使用默认参数，其中\mintinline{python}{k=5}表示对每个样本寻找与其最近的5个训练样本，\mintinline{python}{weights='distance'}表示使用样本间欧氏距离作为权重，样本间距离越近就越重要。
+
+    \subsection{基于邻域的评分预测法}
+    这是评分推荐所用的协同过滤算法，也可以分成基于用户和基于物品的评分预测。
+    \begin{enumerate}
+      \item 基于用户的评分预测：该方法认为用户$u$对物品$i$的评分，可以参考用户$u$的平均打分，以及和用户$u$相似的其他用户对该物品的打分。具体地：
+      \begin{equation}
+      \hat{p}_{ui}=\bar{p}_u+\frac{\sum\limits_{v\in N(i)\cap B(u,k)}sim(u,v)(p_{vi}-\bar{p}_v)}{\sum\limits_{v\in N(i)\cap B(u,k)}sim(u,v)},
+      \end{equation}
+      其中，$\hat{p}_{ui}$是预测用户$u$对物品$i$的打分；$\bar{p}_u$是用户$u$的平均打分；$N(i)$是对物品有过评分的用户集合；$B(u,k)$是和用户$u$最相似的$k$个用户。
+      
+      用户间相似度计算使用余弦相似度，每个用户$u$对应了一个评分向量$\vec{p}_u$，向量长度等于所有的动漫数，每个分量取值就等于该用户对该动漫的打分（没有打分就记作$0$）：
+      \begin{equation}
+      sim(u,v)=\frac{\vec{p}_u\cdot\vec{p}_v}{|\vec{p}_u|\cdot |\vec{p}_v|}=\frac{\sum\limits_{i\in I}p_{ui}\cdot p_{vi}}{\sqrt{\sum\limits_{i\in I}p_{ui}^2\cdot \sum\limits_{i\in I}p_{vi}^2}}.
+      \end{equation}
+      
+      \item 基于物品的评分预测\cite{sarwar2001item}：这种方法认为用户$u$对物品$i$的评分，可以参考物品$i$的平均打分，以及用户对和物品$i$相似的其他物品的打分。具体地：
+      \begin{equation}
+      \hat{p}_{ui}=\bar{p}_i+\frac{\sum\limits_{j\in N(u)\cap B(i,k)}sim(i,j)(p_{uj}-\bar{p}_j)}{\sum\limits_{j\in N(u)\cap B(i,k)}sim(i,j)},
+      \end{equation}
+      其中，$\hat{p}_{ui}$是预测用户$u$对物品$i$的打分；$\bar{p}_i$是物品$i$的平均打分；$N(u)$是用户$u$评过分的物品集合；$B(i,k)$是和物品$i$最相似的$k$个物品。
+      
+      物品间相似度计算也使用余弦相似度，每个物品$i$对应了一个评分向量$\vec{p}_i$，向量长度等于所有的用户数，每个分量取值就等于该用户对该动漫的打分（没有打分就记作$0$）：
+      \begin{equation}
+      sim(i,j)=\frac{\vec{p}_i\cdot\vec{p}_j}{|\vec{p}_i|\cdot |\vec{p}_j|}=\frac{\sum\limits_{u\in U}p_{ui}\cdot p_{uj}}{\sqrt{\sum\limits_{u\in U}p_{ui}^2\cdot \sum\limits_{u\in U}p_{uj}^2}}.
+      \end{equation}
+    \end{enumerate}
+
+    图~\ref{fig: pred_score_distribution}是这三种填充方法各自填充的评分结果分布图与原始训练数据集中的评分结果分布比较。可以看出：三种方法填充的评分分布情况与总体分布大体一致，其中基于用户邻域的方法和k近邻填充方法的评分预测分布较为平缓，而基于物品邻域的方法，其预测结果分数普遍较高。
+    \begin{figure}[htbp]
+      \centering
+      \includegraphics[height=12.0cm,width=16.0cm]{figure/pred_score.png}
+      \caption{三种填充方法各自预测评分结果的分布情况}
+      \label{fig: pred_score_distribution}
+    \end{figure}
+
+    表~\ref{tab:missing_imputation_results_3}是用KNN及两种基于领域的方法对样本得分填充后，四种召回算法在测试集上的效果对比。
+    % Table generated by Excel2LaTeX from sheet 'imputation'
+    \begin{table}[htbp]
+      \centering
+      \caption{三种缺失填充方法结果对比}
+      %\textbf{表4.11}~~三种填充方法比较
+      \resizebox{\textwidth}{!}{
+        \begin{tabular}{rlrrrrrrrr}
+          \toprule
+          &      & \multicolumn{4}{c}{K=10}  & \multicolumn{4}{c}{K=20} \\
+          \cmidrule{3-10}    \multicolumn{1}{l}{Algorithm} & Imputation & \multicolumn{1}{l}{Recall} & \multicolumn{1}{l}{Precision} & \multicolumn{1}{l}{Hit\_rate} & \multicolumn{1}{l}{Coverage} & \multicolumn{1}{l}{Recall} & \multicolumn{1}{l}{Precision} & \multicolumn{1}{l}{Hit\_rate} & \multicolumn{1}{l}{Coverage} \\
+          \midrule
+          \multicolumn{1}{l}{Item\_CF} & none & 2.148\% & 10.394\% & 44.700\% & 13.107\% & 3.778\% & 9.190\% & 55.744\% & 18.386\% \\
+          & knn  & 2.272\% & \textbf{10.947\%} & 45.546\% & \textbf{13.572\%} & 3.981\% & \textbf{9.633\%} & 57.638\% & \textbf{20.771\%} \\
+          & user & 2.244\% & 10.842\% & 45.546\% & 13.317\% & 3.931\% & 9.535\% & 56.711\% & 20.441\% \\
+          & item & \textbf{2.284\%} & 10.840\% & \textbf{46.030\%} & 13.182\% & \textbf{4.044\%} & 9.618\% & \textbf{58.847\%} & 19.811\% \\
+          \multicolumn{1}{l}{Item\_related} & none & 1.466\% & 7.247\% & 35.953\% & 22.615\% & 2.656\% & 6.770\% & 48.609\% & 27.070\% \\
+          & knn  & 1.569\% & \textbf{7.728\%} & 38.210\% & 22.451\% & 2.807\% & 7.110\% & 49.980\% & 26.785\% \\
+          & user & 1.541\% & 7.609\% & 37.565\% & 22.376\% & 2.817\% & \textbf{7.163\%} & 50.181\% & 26.920\% \\
+          & item & \textbf{1.585\%} & 7.648\% & \textbf{38.613\%} & \textbf{22.466\%} & \textbf{2.866\%} & 7.108\% & \textbf{51.270\%} & \textbf{26.965\%} \\
+          \multicolumn{1}{l}{gender+age} & none & 2.036\% & 9.177\% & 41.999\% & 3.824\% & 3.641\% & 8.230\% & 52.358\% & 5.324\% \\
+          & knn  & \textbf{2.104\%} & \textbf{9.482\%} & \textbf{42.805\%} & \textbf{3.839\%} & \textbf{3.715\%} & \textbf{8.378\%} & 53.446\% & \textbf{5.849\%} \\
+          & user & 2.093\% & 9.434\% & 42.523\% & 3.719\% & 3.665\% & 8.267\% & 52.842\% & 5.774\% \\
+          & item & 2.075\% & 9.348\% & 42.563\% & 3.764\% & 3.684\% & 8.306\% & \textbf{53.567\%} & 5.849\% \\
+          \multicolumn{1}{l}{Item\_similarity} & none & 2.438\% & 11.002\% & 48.408\% & 4.874\% & 4.350\% & 9.866\% & 58.081\% & 5.549\% \\
+          & knn  & 2.462\% & 11.106\% & 48.811\% & \textbf{4.769\%} & 4.326\% & 9.796\% & 59.008\% & \textbf{5.579\%} \\
+          & user & 2.455\% & 11.072\% & 48.771\% & 4.784\% & \textbf{4.352\%} & 9.849\% & 59.008\% & 5.564\% \\
+          & item & \textbf{2.499\%} & \textbf{11.256\%} & \textbf{49.496\%} & 4.694\% & 4.348\% & \textbf{9.815\%} & \textbf{58.726\%} & 5.534\% \\
+          \bottomrule
+      \end{tabular}}%
+      \label{tab:missing_imputation_results_3}%
+    \end{table}%
+
+    从结果上看，三种填充方法均对召回算法的结果有改善。具体地，knn方法对人口统计召回的提升效果比较好，基于物品邻域的评分预测对剩余的三种召回算法提升较大，而基于用户邻域的评分预测方法相对上述两种方法效果不是那么显著。
+
+  \section{隐反馈特征的利用}
+  前面实验中设置样本标签的方法是为my\_score字段设定一个阈值，打分高于阈值的样本为正样本，反之为负样本，阈值初设为8分。这样做只利用了用户打分这一显式反馈特征，没有充分利用数据集中其他一些与“用户是否喜欢该动漫”有联系的隐式反馈特征，而综合考虑隐反馈特征和显反馈特征来决定样本标签理应会使得推荐效果更好。本节下面的实验考虑如下两个隐反馈特征：my\_watched\_episodes（用户观看的集数）和my\_status（用户观看状态）。
+    \subsection{结合观看集数设置样本标签}
+    对某个训练样本，若用户在打分时观看的集数占该动漫总集数的比例越大，可以认为其打分信息可信程度越高。因此在设置样本标签时可以在原有的打分阈值基础上加入一个新条件，即：用户观看集数/动漫总集数的比例大小，并同样给定一个阈值$ratio$：
+    \begin{equation}
+    \label{ratio}
+    y=\begin{cases}
+    1, & \text{my\_score}\geq 8\;\;\textbf{and}\;\;\frac{\text{my\_watched\_episodes}}{\text{episodes}}\geq ratio \\
+    0, & \textbf{else}
+    \end{cases}
+    \end{equation}
+
+    原始数据集中存在少量的动漫的episodes=0。若要用~\ref{ratio}构造样本，分母不能为零，因此要对这部分的数据进行缺失填充。填充的方法是用训练集中所有用户看过该动漫的最长集数来作为总集数的估计。表~\ref{tab:watched_ratio_results}是结合了观看集数比例设置样本标签后各组召回算法的效果，以及最后xgb精排后的结果。
+    % Table generated by Excel2LaTeX from sheet 'watched'
+    \begin{table}[htbp]
+      \centering
+      \caption{结合用户观看集数比例构造标签后的推荐结果}
+      %\textbf{表4.12}~~考虑用户观看集数比例后的推荐效果
+      \resizebox{\textwidth}{!}{
+        \begin{tabular}{rlrrrr}
+          \toprule
+          \multicolumn{1}{l}{ratio\_threshold} & Algorithm & \multicolumn{1}{l}{Recall} & \multicolumn{1}{l}{Precision} & \multicolumn{1}{l}{Hit\;rate} & \multicolumn{1}{l}{Coverage} \\
+          \midrule
+          0    & \textbf{gender+age} & \textbf{3.641\%} & \textbf{8.230\%} & \textbf{52.358\%} & \textbf{5.324\%} \\
+          0.5  & gender+age & 3.595\% & 8.126\% & 51.794\% & 5.339\% \\
+          0.6  & gender+age & 3.591\% & 8.118\% & 51.673\% & 5.339\% \\
+          0.7  & gender+age & 3.580\% & 8.092\% & 51.632\% & 5.339\% \\
+          0.8  & gender+age & 3.568\% & 8.066\% & 51.552\% & 5.354\% \\
+          0    & \textbf{Item-related} & \textbf{1.466\%} & \textbf{7.247\%} & \textbf{35.953\%} & \textbf{22.615\%} \\
+          0.5  & Item-related & 1.543\% & 7.657\% & 37.525\% & 22.660\% \\
+          0.6  & Item-related & 1.556\% & 7.724\% & 37.888\% & 22.466\% \\
+          0.7  & Item-related & 1.543\% & 7.662\% & 37.646\% & 22.555\% \\
+          0.8  & Item-related & 1.554\% & 7.722\% & 38.170\% & 22.376\% \\
+          0    & \textbf{Item-CF} & \textbf{3.778\%} & \textbf{9.190\%} & \textbf{55.744\%} & \textbf{18.386\%} \\
+          0.5  & Item-CF & 3.739\% & 9.104\% & 55.542\% & 21.056\% \\
+          0.6  & Item-CF & 3.751\% & 9.133\% & 55.462\% & 21.101\% \\
+          0.7  & Item-CF & 3.744\% & 9.118\% & 55.421\% & 21.131\% \\
+          0.8  & Item-CF & 3.730\% & 9.084\% & 55.139\% & 21.251\% \\
+          0    & \textbf{Item-similarity} & \textbf{4.208\%} & \textbf{9.498\%} & \textbf{57.517\%} & \textbf{5.624\%} \\
+          0.5  & Item-similarity & 4.319\% & 9.800\% & 58.525\% & 5.759\% \\
+          0.6  & Item-similarity & 4.320\% & 9.805\% & 58.565\% & 5.729\% \\
+          0.7  & Item-similarity & 4.316\% & 9.795\% & 58.565\% & 5.729\% \\
+          0.8  & Item-similarity & 4.331\% & 9.830\% & 58.525\% & 5.729\% \\
+          0    & \textbf{xgboost} & \textbf{7.469\%} & \textbf{11.203\%} & \textbf{77.872\%} & \textbf{21.296\%} \\
+          0.5  & xgboost & 7.587\% & 11.392\% & 77.711\% & 24.280\% \\
+          0.6  & xgboost & 7.575\% & 11.388\% & 77.348\% & 23.635\% \\
+          0.7  & xgboost & 7.566\% & 11.361\% & 77.872\% & 23.410\% \\
+          0.8  & xgboost & 7.549\% & 11.336\% & 77.227\% & 23.815\% \\
+          \bottomrule
+      \end{tabular}}%
+      \label{tab:watched_ratio_results}%
+    \end{table}%
+
+    从表~\ref{tab:watched_ratio_results}可以得到：
+    \begin{itemize}
+      \item 设置了$ratio$阈值后，Item-related召回和Item-similarity召回的结果都有比较明显的提升；人口统计召回和Item-based CF召回效果略微下降；
+      \item 设置了$ratio$阈值后，xgboost重排效果也有了明显提升。相对来说，ratio阈值较低时，重排后的结果会更好一些。
+    \end{itemize}
+
+    因此将特征my\_watched\_episodes纳入样本标签构造的规则中是有显著作用的。
+
+    \subsection{结合观看状态来设置样本标签}
+    表~\ref{tab:status_score_distribution}显示了不同的my\_status对应的打分分布是有显著差异的，因此统一的设置打分阈值并不是十分的合理，样本不同的my\_status取值$i$应当对应一个不同的打分阈值$t_i$。另一方面，各状态样本所占比例也不一样，显然对于样本比例大的状态，其阈值选取对结果的影响也越大。下面是对各状态的阈值变化对应推荐效果变化的探索分析，类似于grid-search（更多结果详见附录A）：
+
+    \begin{enumerate}
+      \item $my\_status=2$：令$t_2\in\{7,8,9\}$，其余状态阈值为：$t_1\in\{7,8,9\},\;\;t_3\in\{7,8\},\;\;t_4=8$，共可比较六组实验结果，表~\ref{tab:status=2}是其中一组的结果（阈值分别为$t_1=8,\;t_3=8,\;t_4=8$）。可以看出：$t_2=8$时的最终推荐效果，要显著优于$t_2=7\;\text{or}\;9$时的效果。
+      % Table generated by Excel2LaTeX from sheet 'status=2'
+      \begin{table}[htbp]
+        \centering
+        \caption{my\_status=2对应不同阈值下的推荐结果}
+        %\textbf{表4.13}~~ my\_status=2的阈值变化结果
+        \resizebox{\textwidth}{!}{
+          \begin{tabular}{rlrrrr}
+            \toprule
+            \multicolumn{1}{l}{threshold} & Algorithm & \multicolumn{1}{l}{Recall} & \multicolumn{1}{l}{Precision} & \multicolumn{1}{l}{Hit\;rate} & \multicolumn{1}{l}{Coverage} \\
+            \midrule
+            7    & gender+age & 3.510\% & 7.932\% & 50.988\% & 5.369\% \\
+            8    & gender+age & 3.641\% & 8.230\% & 52.358\% & 5.324\% \\
+            9    & gender+age & 3.722\% & 8.417\% & 54.373\% & 5.339\% \\
+            7    & Item-related & 1.489\% & 7.303\% & 36.638\% & 22.705\% \\
+            8    & Item-related & 1.466\% & 7.247\% & 35.953\% & 22.615\% \\
+            9    & Item-related & 1.418\% & 7.302\% & 34.865\% & 22.271\% \\
+            7    & Item-CF & 3.577\% & 8.686\% & 53.648\% & 21.371\% \\
+            8    & Item-CF & 3.778\% & 9.190\% & 55.744\% & 18.386\% \\
+            9    & Item-CF & 3.770\% & 9.224\% & 58.565\% & 26.770\% \\
+            7    & Item-similarity & 4.423\% & 10.022\% & 58.888\% & 5.474\% \\
+            8    & Item-similarity & 4.208\% & 9.498\% & 57.517\% & 5.624\% \\
+            9    & Item-similarity & 4.072\% & 9.264\% & 56.993\% & 5.759\% \\
+            7    & xgboost & 7.340\% & 11.021\% & 77.106\% & 22.735\% \\
+            8    & \textbf{xgboost} & \textbf{7.469\%} & \textbf{11.203\%} & \textbf{77.872\%} & \textbf{21.296\%} \\
+            9    & xgboost & 7.385\% & 11.092\% & 77.194\% & 26.110\% \\
+            \bottomrule
+        \end{tabular}}%
+        \label{tab:status=2}%
+      \end{table}%
+      
+      \item $my\_status=1$：令$t_1\in\{7,8,9\}$，其余状态阈值为：$t_3\in\{7,8\},t_2=t_4=8$，从表~\ref{tab:status=1}可以看出：$t_1=9$时的最终推荐效果略优
+      % Table generated by Excel2LaTeX from sheet 'status=1'
+      \begin{table}[htbp]
+        \centering
+        \caption{my\_status=1对应不同阈值下的推荐结果}
+        %\textbf{表4.14}~~my\_status=1的阈值变化结果
+        \resizebox{\textwidth}{!}{
+          \begin{tabular}{rlrrrr}
+            \toprule
+            &      & \multicolumn{1}{l}{$t_3=8$} &      & \multicolumn{1}{l}{$t_3=7$} &  \\
+            \cmidrule{3-6}    \multicolumn{1}{l}{threshold} & Algorithm & \multicolumn{1}{l}{Recall} & \multicolumn{1}{l}{Precision} & \multicolumn{1}{l}{Recall} & \multicolumn{1}{l}{Precision} \\
+            \midrule
+            7    & gender+age & 3.642\% & 8.234\% & 3.647\% & 8.244\% \\
+            8    & gender+age & 3.641\% & 8.230\% & 3.641\% & 8.230\% \\
+            9    & gender+age & 3.624\% & 8.193\% & 3.622\% & 8.188\% \\
+            7    & Item-related & 1.466\% & 7.244\% & 1.477\% & 7.285\% \\
+            8    & Item-related & 1.466\% & 7.247\% & 1.470\% & 7.258\% \\
+            9    & Item-related & 1.474\% & 7.296\% & 1.469\% & 7.258\% \\
+            7    & Item-CF & 3.772\% & 9.170\% & 3.766\% & 9.153\% \\
+            8    & Item-CF & 3.778\% & 9.190\% & 3.736\% & 9.082\% \\
+            9    & Item-CF & 3.708\% & 9.017\% & 3.714\% & 9.030\% \\
+            7    & Item-similarity & 4.323\% & 9.804\% & 4.370\% & 9.909\% \\
+            8    & Item-similarity & 4.208\% & 9.498\% & 4.361\% & 9.890\% \\
+            9    & Item-similarity & 4.332\% & 9.829\% & 4.341\% & 9.848\% \\
+            7    & xgboost & 7.453\% & 11.181\% & 7.437\% & 11.167\% \\
+            8    & xgboost & 7.469\% & 11.203\% & 7.447\% & 11.182\% \\
+            9    & xgboost & \textbf{7.523\%} & \textbf{11.296\%} & \textbf{7.533\%} & \textbf{11.311\%} \\
+            \bottomrule
+        \end{tabular}}%
+        \label{tab:status=1}%
+      \end{table}%
+      
+      \item $my\_status=4$：令$t_4\in\{5,6,7,8\}$，其余状态阈值为：$t_1=9,\;t_2=t_3=8$。从表~\ref{tab:status=4}可以看出：$t_4\geq 6$时的模型效果都优于原始模型的效果，而当$t_4\leq 5$后，有一个显著的下滑，因此适当的阈值选取应该在6分及以上。
+      % Table generated by Excel2LaTeX from sheet 'status=4'
+      \begin{table}[htbp]
+        \centering
+        \caption{my\_status=4对应不同阈值下的推荐结果}
+        %\textbf{表4.15}~~my\_status=4的阈值变化结果
+        \resizebox{\textwidth}{!}{
+          \begin{tabular}{rlrrrr}
+            \toprule
+            \multicolumn{1}{l}{threshold} & Algorithm & \multicolumn{1}{l}{Recall} & \multicolumn{1}{l}{Precision} & \multicolumn{1}{l}{Hit\;rate} & \multicolumn{1}{l}{Coverage} \\
+            \midrule
+            5    & gender+age & 3.640\% & 8.228\% & 52.559\% & 5.354\% \\
+            6    & gender+age & 3.639\% & 8.226\% & 52.439\% & 5.324\% \\
+            7    & gender+age & 3.628\% & 8.201\% & 52.358\% & 5.309\% \\
+            8    & gender+age & 3.624\% & 8.193\% & 52.277\% & 5.309\% \\
+            5    & Item-related & 1.478\% & 7.293\% & 36.518\% & 22.406\% \\
+            6    & Item-related & 1.469\% & 7.262\% & 36.195\% & 22.645\% \\
+            7    & Item-related & 1.477\% & 7.305\% & 36.195\% & 22.481\% \\
+            8    & Item-related & 1.474\% & 7.296\% & 36.034\% & 22.451\% \\
+            5    & Item-CF & 3.726\% & 9.057\% & 55.341\% & 20.711\% \\
+            6    & Item-CF & 3.710\% & 9.020\% & 55.099\% & 21.071\% \\
+            7    & Item-CF & 3.719\% & 9.041\% & 55.462\% & 21.251\% \\
+            8    & Item-CF & 3.708\% & 9.017\% & 55.139\% & 21.326\% \\
+            5    & Item-similarity & 4.344\% & 9.855\% & 58.807\% & 5.654\% \\
+            6    & Item-similarity & 4.340\% & 9.847\% & 58.605\% & 5.654\% \\
+            7    & Item-similarity & 4.332\% & 9.829\% & 58.605\% & 5.654\% \\
+            8    & Item-similarity & 4.332\% & 9.829\% & 58.726\% & 5.714\% \\
+            5    & xgboost & 7.457\% & 11.197\% & 78.517\% & 22.076\% \\
+            6    & xgboost & 7.518\% & 11.290\% & 78.033\% & 22.780\% \\
+            7    & xgboost & 7.531\% & 11.309\% & 78.275\% & 22.211\% \\
+            8    & xgboost & 7.523\% & 11.296\% & 77.993\% & 22.825\% \\
+            \bottomrule
+        \end{tabular}}%
+        \label{tab:status=4}%
+      \end{table}%
+    \end{enumerate}
+
+    综上，除了$my\_status=2$的阈值选取对各召回算法效果以及最终排序结果有比较明显的影响外，其他$my\_status$的阈值改变对结果的影响其实比较微弱。这很大程度上是因为样本特征$my\_status$取值极其不平衡，所以占据极大比例的状态2的阈值选取才是最关键的。但是如果数据集的组成有类似的隐式特征，同时类别比较均衡的时候，根据不同类设置不同阈值肯定会起到更明显的作用。

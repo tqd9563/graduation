@@ -1,0 +1,28 @@
+\boolfalse {citerequest}\boolfalse {citetracker}\boolfalse {pagetracker}\boolfalse {backtracker}\relax 
+\addvspace {10.0pt}
+\addvspace {10.0pt}
+\addvspace {10.0pt}
+\contentsline {table}{\numberline {3--1}{\ignorespaces 原始和抽样数据集中的日期分布\relax }}{12}{table.caption.6}%
+\contentsline {table}{\numberline {3--2}{\ignorespaces 各status对应打分分布情况\relax }}{13}{table.caption.7}%
+\addvspace {10.0pt}
+\contentsline {table}{\numberline {4--1}{\ignorespaces 不同$K_1$取值下Item-based CF的效果\relax }}{20}{table.caption.13}%
+\contentsline {table}{\numberline {4--2}{\ignorespaces 不同$K_1$取值下Item-similarity Recall的效果\relax }}{21}{table.caption.14}%
+\contentsline {table}{\numberline {4--3}{\ignorespaces 四种召回算法在测试集上的表现\relax }}{21}{table.caption.15}%
+\contentsline {table}{\numberline {4--4}{\ignorespaces 测试集中用户观看的新番与旧番分布情况\relax }}{22}{table.caption.16}%
+\contentsline {table}{\numberline {4--5}{\ignorespaces Xgboost参数设置\relax }}{23}{table.caption.17}%
+\contentsline {table}{\numberline {4--6}{\ignorespaces Xgboost重排后的推荐结果\relax }}{23}{table.caption.18}%
+\contentsline {table}{\numberline {4--7}{\ignorespaces 不同读入数据顺序下增量训练的结果\relax }}{25}{table.caption.19}%
+\contentsline {table}{\numberline {4--8}{\ignorespaces 对“全量”数据多次采样的结果\relax }}{26}{table.caption.20}%
+\contentsline {table}{\numberline {4--9}{\ignorespaces 全量数据的增量结果与$5\%$抽样的对比\relax }}{26}{table.caption.21}%
+\contentsline {table}{\numberline {4--10}{\ignorespaces 各训练集中用户喜欢动漫数分布情况\relax }}{26}{table.caption.22}%
+\contentsline {table}{\numberline {4--11}{\ignorespaces 三种缺失填充方法结果对比\relax }}{30}{table.caption.24}%
+\contentsline {table}{\numberline {4--12}{\ignorespaces 结合用户观看集数比例构造标签后的推荐结果\relax }}{31}{table.caption.25}%
+\contentsline {table}{\numberline {4--13}{\ignorespaces my\_status=2对应不同阈值下的推荐结果\relax }}{33}{table.caption.26}%
+\contentsline {table}{\numberline {4--14}{\ignorespaces my\_status=1对应不同阈值下的推荐结果\relax }}{34}{table.caption.27}%
+\contentsline {table}{\numberline {4--15}{\ignorespaces my\_status=4对应不同阈值下的推荐结果\relax }}{35}{table.caption.28}%
+\addvspace {10.0pt}
+\contentsline {table}{\numberline {A--1}{\ignorespaces $t_1=9,\tmspace +\thickmuskip {.2777em}t_3=8$对应my\_status=2的不同阈值结果\relax }}{41}{table.caption.31}%
+\contentsline {table}{\numberline {A--2}{\ignorespaces $t_1=9,\tmspace +\thickmuskip {.2777em}t_3=7$对应my\_status=2的不同阈值结果\relax }}{42}{table.caption.32}%
+\contentsline {table}{\numberline {A--3}{\ignorespaces $t_1=8,\tmspace +\thickmuskip {.2777em}t_3=7$对应my\_status=2的不同阈值结果\relax }}{42}{table.caption.33}%
+\contentsline {table}{\numberline {A--4}{\ignorespaces $t_1=7,\tmspace +\thickmuskip {.2777em}t_3=8$对应my\_status=2的不同阈值结果\relax }}{43}{table.caption.34}%
+\contentsline {table}{\numberline {A--5}{\ignorespaces $t_1=7,\tmspace +\thickmuskip {.2777em}t_3=7$对应my\_status=2的不同阈值结果\relax }}{43}{table.caption.35}%
